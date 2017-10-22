@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 )
 
 type SearchResult struct {
@@ -29,7 +30,7 @@ type Page struct {
 func main() {
 	templates := template.Must(template.ParseFiles("templates/index.html"))
 
-	db, err := sql.Open("postgres", "postgres://htldhvag:Gl6413O-Da2L2UZ9scvEJYS77Ie4RfP4@elmer.db.elephantsql.com:5432/htldhvag")
+	db, err := sql.Open("postgres", os.Getenv("PSQLURL"))
 
 	if err != nil {
 		log.Fatal(err)
