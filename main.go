@@ -69,6 +69,7 @@ func main() {
 		}
 
 		defer rows.Close()
+
 		for rows.Next() {
 			var b Book
 			rows.Scan(&b.PK, &b.Title, &b.Author, &b.Classification)
@@ -93,6 +94,7 @@ func main() {
 		}
 
 		encoder := json.NewEncoder(w)
+
 		if err := encoder.Encode(results); err != nil {
 			fmt.Printf("ERROR IS: %s", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
