@@ -12,7 +12,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"os"
+	// "os"
 )
 
 type SearchResult struct {
@@ -27,10 +27,24 @@ type Page struct {
 	DBStatus bool
 }
 
+const (
+	host     = "elmer.db.elephantsql.com"
+	port     = 5432
+	user     = "htldhvag"
+	password = "0f1aEQC0VZaKWf3Y8JiPI1zhpJn8wafS"
+	dbname   = "htldhvag"
+)
+
 func main() {
 	templates := template.Must(template.ParseFiles("templates/index.html"))
 
-	db, err := sql.Open("postgres", os.Getenv("PSQLURL"))
+	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
+		"password=%s dbname=%s sslmode=disable",
+		host, port, user, password, dbname)
+
+	fmt.Println(psqlInfo)
+
+	db, err := sql.Open("postgres", psqlInfo)
 
 	if err != nil {
 		log.Fatal(err)
@@ -47,6 +61,7 @@ func main() {
 
 		if err := templates.ExecuteTemplate(w, "index.html", p); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 	})
 
@@ -56,11 +71,13 @@ func main() {
 
 		if results, err = search(r.FormValue("search")); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 
 		encoder := json.NewEncoder(w)
 		if err := encoder.Encode(results); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 	})
 
@@ -69,18 +86,24 @@ func main() {
 		var err error
 
 		if book, err = find(r.FormValue("id")); err != nil {
+			fmt.Println("FIRST ERROR YO %s", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 
 		if err = db.Ping(); err != nil {
+			fmt.Printf("ERROR AGAIN YOOO %s", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 
-		_, err = db.Exec("insert into books (pk, title, author, id, classification) values (?, ?, ?, ?)",
-			nil, book.BookData.Title, book.BookData.Author, book.BookData.ID, book.Classification.MostPopular)
+		_, err = db.Exec("INSERT INTO books(title, author, id, classification) values($1, $2, $3, $4)",
+			book.BookData.Title, book.BookData.Author, book.BookData.ID, book.Classification.MostPopular)
 
 		if err != nil {
+			fmt.Printf("ERROR YOOO %s", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 	})
 
@@ -99,7 +122,7 @@ type ClassifyBookResponse struct {
 	} `xml:"work"`
 	Classification struct {
 		MostPopular string `xml:"sfa,attr"`
-	} `xml:"recommendations>doc>mostPopular"`
+	} `xml:"recommendations>ddc>mostPopular"`
 }
 
 func find(id string) (ClassifyBookResponse, error) {
