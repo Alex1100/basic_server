@@ -12,7 +12,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	// "os"
+	"os"
 )
 
 type SearchResult struct {
@@ -28,11 +28,11 @@ type Page struct {
 }
 
 const (
-	host     = "elmer.db.elephantsql.com"
-	port     = 5432
-	user     = "htldhvag"
-	password = "0f1aEQC0VZaKWf3Y8JiPI1zhpJn8wafS"
-	dbname   = "htldhvag"
+	host     = os.Getenv("PSQLHOST")
+	port     = os.Getenv("PSQLPORT")
+	user     = os.Getenv("PSQLUSER")
+	password = os.Getenv("PSQLPASSWORD")
+	dbname   = os.Getenv("PSQLDBNAME")
 )
 
 func main() {
