@@ -2,18 +2,23 @@ package main
 
 import (
 	"database/sql"
-	"fmt"
-	_ "github.com/lib/pq"
-	// _ "github.com/mattn/go-sqlite3"
 	"encoding/json"
 	"encoding/xml"
+	"fmt"
+	_ "github.com/lib/pq"
 	"html/template"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
-	"os"
 )
+
+type Book struct {
+	PK             int
+	Title          string
+	Author         string
+	Classification string
+}
 
 type SearchResult struct {
 	Title  string `xml:"title,attr"`
@@ -23,19 +28,19 @@ type SearchResult struct {
 }
 
 type Page struct {
-	Name     string
-	DBStatus bool
+	Books []Book
 }
 
 const (
-	host     = os.Getenv("PSQLHOST")
-	port     = os.Getenv("PSQLPORT")
-	user     = os.Getenv("PSQLUSER")
-	password = os.Getenv("PSQLPASSWORD")
-	dbname   = os.Getenv("PSQLDBNAME")
+	host     = "elmer.db.elephantsql.com"
+	port     = 5432
+	user     = "htldhvag"
+	password = ""
+	dbname   = "htldhvag"
 )
 
 func main() {
+
 	templates := template.Must(template.ParseFiles("templates/index.html"))
 
 	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
@@ -50,16 +55,28 @@ func main() {
 		log.Fatal(err)
 	}
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		p := Page{Name: "Gopher"}
+	defer db.Close()
 
-		if name := r.FormValue("name"); name != "" {
-			p.Name = name
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		p := Page{Books: []Book{}}
+
+		rows, err := db.Query("SELECT pk, title, author, classification FROM books")
+
+		if err != nil {
+			fmt.Printf("ERROR IS: %s", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 
-		p.DBStatus = db.Ping() == nil
+		defer rows.Close()
+		for rows.Next() {
+			var b Book
+			rows.Scan(&b.PK, &b.Title, &b.Author, &b.Classification)
+			p.Books = append(p.Books, b)
+		}
 
 		if err := templates.ExecuteTemplate(w, "index.html", p); err != nil {
+			fmt.Printf("ERROR IS: %s", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -70,12 +87,14 @@ func main() {
 		var err error
 
 		if results, err = search(r.FormValue("search")); err != nil {
+			fmt.Printf("ERROR IS: %s", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		encoder := json.NewEncoder(w)
 		if err := encoder.Encode(results); err != nil {
+			fmt.Printf("ERROR IS: %s", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -86,25 +105,50 @@ func main() {
 		var err error
 
 		if book, err = find(r.FormValue("id")); err != nil {
-			fmt.Println("FIRST ERROR YO %s", err)
+			fmt.Printf("ERROR IS: %s", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		if err = db.Ping(); err != nil {
-			fmt.Printf("ERROR AGAIN YOOO %s", err)
+			fmt.Printf("ERROR IS: %s", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		_, err = db.Exec("INSERT INTO books(title, author, id, classification) values($1, $2, $3, $4)",
+		result, err := db.Exec("INSERT INTO books(title, author, id, classification) values($1, $2, $3, $4)",
 			book.BookData.Title, book.BookData.Author, book.BookData.ID, book.Classification.MostPopular)
 
 		if err != nil {
-			fmt.Printf("ERROR YOOO %s", err)
+			fmt.Printf("ERROR IS: %s", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+
+		pk, _ := result.LastInsertId()
+
+		b := Book{
+			PK:             int(pk),
+			Title:          book.BookData.Title,
+			Author:         book.BookData.Author,
+			Classification: book.Classification.MostPopular,
+		}
+
+		if err := json.NewEncoder(w).Encode(b); err != nil {
+			fmt.Printf("ERROR IS: %s", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	})
+
+	http.HandleFunc("/books/delete", func(w http.ResponseWriter, r *http.Request) {
+		if _, err := db.Exec("DELETE FROM books WHERE books.pk = $1", r.FormValue("pk")); err != nil {
+			fmt.Printf("ERROR IS: %s", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
 	})
 
 	fmt.Println(http.ListenAndServe(":8080", nil))
@@ -130,6 +174,7 @@ func find(id string) (ClassifyBookResponse, error) {
 	body, err := classifyAPI("http://classify.oclc.org/classify2/Classify?summary=true&owi=" + url.QueryEscape(id))
 
 	if err != nil {
+		fmt.Printf("ERROR IS: %s", err)
 		return ClassifyBookResponse{}, err
 	}
 
@@ -142,6 +187,7 @@ func search(query string) ([]SearchResult, error) {
 	body, err := classifyAPI("http://classify.oclc.org/classify2/Classify?summary=true&title=" + url.QueryEscape(query))
 
 	if err != nil {
+		fmt.Printf("ERROR IS: %s", err)
 		return []SearchResult{}, err
 	}
 
@@ -154,6 +200,7 @@ func classifyAPI(url string) ([]byte, error) {
 	var err error
 
 	if resp, err = http.Get(url); err != nil {
+		fmt.Printf("ERROR IS: %s", err)
 		return []byte{}, err
 	}
 
